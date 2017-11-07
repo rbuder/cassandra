@@ -1,0 +1,69 @@
+---
+- hosts: all
+  tasks:
+  - name: Update hosts file
+    template: src=files/hosts dest=/etc/hosts
+  - name: disable firewall
+    service: name=firewalld state=stopped
+  - name: ensure NetworkManager is stopped
+    service: name=NetworkManager state=stopped
+  - name: write /etc/resolv.conf
+    template: src=files/resolv.conf dest=/etc/resolv.conf
+  - name: ensure java is up 2 date
+    yum: name=java state=latest
+  - name: enable datastax repo
+    template: src=files/datastax.repo dest=/etc/yum.repos.d/datastax.repo
+  - name: install DSC30
+    yum: name=dsc30 state=latest
+  - name: install cassandra
+    yum: name=cassandra30 state=latest
+  - name: install cassandra-tools
+    yum: name=cassandra30-tools state=latest
+  - name: fix the service init script
+    template: src=files/cassandra.init dest=/etc/init.d/cassandra
+  - name: run chkconfig --add cassandra
+    shell: /usr/sbin/chkconfig --add cassandra
+  - name: Ensure cassandra is running
+    service: name=cassandra state=started
+  - name: stop Cassandra
+    service: name=cassandra state=stopped
+  - name: clear out Cassandra data directories
+    shell: /bin/rm -rf /var/lib/cassandra/data/system/*
+  - name: update cassandra config
+    template: src=files/cassandra.yaml dest=/etc/cassandra/default.conf/cassandra.yaml
+
+- hosts: DC1
+  tasks:
+  - name: update cassandra-rackdc.properties
+    template: src=files/cassandra-rackdc.properties.dc1 dest=/etc/cassandra/default.conf/cassandra-rackdc.properties
+
+- hosts: DC2
+  tasks:
+  - name: update cassandra-rackdc-properties
+    template: src=files/cassandra-rackdc.properties.dc2 dest=/etc/cassandra/default.conf/cassandra-rackdc.properties
+
+- hosts: seed
+  tasks:
+  - name: stop Cassandra
+    service: name=cassandra state=stopped
+  - name: Just to make sure we clear out everything again
+    shell: /bin/rm -rf /var/lib/cassandra/data/system/*
+  - name: start Cassandra on seed nodes
+    service: name=cassandra state=started
+  - name: give it some time to settle
+    pause:
+      seconds: 30
+
+- hosts: all:!seed
+  tasks:
+  - name: stop Cassandra
+    service: name=cassandra state=stopped
+  - name: Just to make sure we clear out everything again
+    shell: /bin/rm -rf /var/lib/cassandra/data/system/*
+  - name: start Cassandra on all other nodes
+    service: name=cassandra state=started
+  - name: wait for 2 minutes
+    pause:
+      seconds: 30
+  - name: run nodetool status
+    shell: /usr/bin/nodetool status
